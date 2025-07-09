@@ -1,8 +1,8 @@
-matplotlib
 streamlit
 pandas
 numpy
 Pillow
-tensorflow
+matplotlib
 seaborn
 plotly
+tensorflow==2.12.0
