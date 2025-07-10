@@ -4,7 +4,6 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 import numpy as np
 from PIL import Image
-import requests
 import tempfile
 import os
 
@@ -47,89 +46,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Cache the model loading function
-@st.cache_resource
-def load_trained_model():
-    """Load the pre-trained model from Google Drive"""
-    try:
-        # First, try to load from local file if it exists
-        if os.path.exists('Modelenv.v1.h5'):
-            st.info("Loading model from local file...")
-            return load_model('Modelenv.v1.h5')
-        
-        # Download model from Google Drive with proper headers
-        file_id = "1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9"
-        url = f"https://drive.google.com/uc?export=download&id={file_id}"
-        
-        with st.spinner("Downloading model from Google Drive... This may take a moment."):
-            session = requests.Session()
-            
-            # First request to get the download warning page
-            response = session.get(url, stream=True)
-            
-            # Check if we got a virus scan warning
-            if "virus scan warning" in response.text.lower():
-                # Extract the confirm token
-                for line in response.text.split('\n'):
-                    if 'confirm=' in line:
-                        confirm_token = line.split('confirm=')[1].split('&')[0]
-                        break
-                else:
-                    confirm_token = None
-                
-                if confirm_token:
-                    # Make the actual download request with confirm token
-                    url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={file_id}"
-                    response = session.get(url, stream=True)
-            
-            if response.status_code == 200:
-                # Check if response contains HTML (Google Drive warning page)
-                content_type = response.headers.get('content-type', '')
-                if 'text/html' in content_type:
-                    st.error("❌ Unable to download model directly. Please try one of these alternatives:")
-                    st.markdown("""
-                    **Option 1:** Download the model manually and place it in the same directory as this app:
-                    - Download from: https://drive.google.com/file/d/1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9/view
-                    - Save as: `Modelenv.v1.h5`
-                    - Restart the app
-                    
-                    **Option 2:** Use the file uploader below to upload your model file directly
-                    """)
-                    return None
-                
-                # Save to temporary file
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
-                    # Write in chunks to handle large files
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            tmp_file.write(chunk)
-                    tmp_file_path = tmp_file.name
-                
-                # Verify file size
-                file_size = os.path.getsize(tmp_file_path)
-                if file_size < 1000:  # Less than 1KB suggests an error page
-                    os.unlink(tmp_file_path)
-                    st.error("❌ Downloaded file is too small. Please try manual download.")
-                    return None
-                
-                st.success(f"✅ Model downloaded successfully! ({file_size/1024/1024:.1f} MB)")
-                
-                # Load the model
-                model = load_model(tmp_file_path)
-                
-                # Clean up temporary file
-                os.unlink(tmp_file_path)
-                
-                return model
-            else:
-                st.error(f"❌ Failed to download model. Status code: {response.status_code}")
-                return None
-                
-    except Exception as e:
-        st.error(f"❌ Error loading model: {str(e)}")
-        st.info("💡 Try uploading your model file manually using the file uploader below.")
-        return None
-
 @st.cache_resource
 def load_model_from_upload(uploaded_model_file):
     """Load model from uploaded file"""
@@ -149,6 +65,17 @@ def load_model_from_upload(uploaded_model_file):
     except Exception as e:
         st.error(f"Error loading uploaded model: {str(e)}")
         return None
+
+@st.cache_resource
+def load_local_model():
+    """Load model from local file if it exists"""
+    if os.path.exists('Modelenv.v1.h5'):
+        try:
+            return load_model('Modelenv.v1.h5')
+        except Exception as e:
+            st.error(f"Error loading local model: {str(e)}")
+            return None
+    return None
 
 def preprocess_image(uploaded_image):
     """Preprocess the uploaded image for prediction"""
@@ -178,7 +105,7 @@ def main():
     # Description
     st.markdown("""
     This application uses a Convolutional Neural Network (CNN) to classify satellite images into different land cover types.
-    Upload a satellite image to get predictions for the following categories:
+    Upload your trained model and satellite images to get predictions for the following categories:
     - **🌥️ Cloudy**: Cloud-covered areas
     - **🏜️ Desert**: Desert and arid regions
     - **🌿 Green Area**: Vegetation and forested areas
@@ -198,41 +125,51 @@ def main():
         
         st.header("🚀 How to Use")
         st.markdown("""
-        1. Upload a satellite image
-        2. Wait for the model to process
-        3. View the prediction results
-        4. Check confidence scores
+        1. Upload your trained model file (.h5)
+        2. Upload a satellite image
+        3. Wait for the model to process
+        4. View the prediction results
+        """)
+        
+        st.header("📁 Download Model")
+        st.markdown("""
+        Download your model from Google Drive:
+        [Modelenv.v1.h5](https://drive.google.com/file/d/1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9/view)
         """)
     
-    # Load model
-    model = load_trained_model()
+    # Try to load local model first
+    model = load_local_model()
     
-    # If model loading failed, provide manual upload option
     if model is None:
-        st.warning("⚠️ Automatic model loading failed. Please upload your model file manually.")
+        st.info("🔍 No local model found. Please upload your model file.")
         
+        # Model upload section
+        st.subheader("📤 Upload Model")
         uploaded_model = st.file_uploader(
-            "Upload your trained model file (Modelenv.v1.h5)",
+            "Upload your trained model file",
             type=['h5'],
-            help="Upload the Modelenv.v1.h5 file from your Google Drive"
+            help="Upload the Modelenv.v1.h5 file that you downloaded from Google Drive"
         )
         
         if uploaded_model is not None:
-            with st.spinner("Loading uploaded model..."):
+            with st.spinner("Loading model..."):
                 model = load_model_from_upload(uploaded_model)
             
             if model is not None:
-                st.success("✅ Model loaded successfully from upload!")
+                st.success("✅ Model loaded successfully!")
             else:
-                st.error("❌ Failed to load the uploaded model.")
+                st.error("❌ Failed to load the model. Please check the file format.")
                 return
         else:
-            st.info("👆 Please upload your model file to continue.")
+            st.warning("⚠️ Please upload your model file to continue.")
             return
     else:
-        st.success("✅ Model loaded successfully!")
+        st.success("✅ Model loaded from local file!")
     
-    # File uploader
+    # Image upload and prediction section
+    st.subheader("📸 Upload Satellite Image")
+    
+    # File uploader for images
     uploaded_file = st.file_uploader(
         "Choose a satellite image...",
         type=['jpg', 'jpeg', 'png', 'bmp', 'tiff'],
