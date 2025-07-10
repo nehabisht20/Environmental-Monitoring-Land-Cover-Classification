@@ -2,41 +2,47 @@ import streamlit as st
 import numpy as np
 from PIL import Image
 from tensorflow.keras.models import load_model
-import gdown
-import os
+import tensorflow as tf
 
-# Constants
-MODEL_URL = "https://drive.google.com/uc?id=1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9"
-MODEL_PATH = "Modelenv.v1.h5"
-CLASS_NAMES = ['Cloudy', 'Desert', 'Green_Area', 'Water']
-
-# Load model safely from Drive
+# Load the model once
 @st.cache_resource
-def load_model_from_drive():
-    if not os.path.exists(MODEL_PATH) or os.path.getsize(MODEL_PATH) < 10000:  # <10 KB likely HTML file
-        gdown.download(MODEL_URL, MODEL_PATH, quiet=False, fuzzy=True)
-    return load_model(MODEL_PATH)
+def load_my_model():
+    return load_model("model/Modelenv.v1.h5")
 
-model = load_model_from_drive()
+model = load_my_model()
 
-# Streamlit UI
-st.set_page_config(page_title="Land Cover Classifier", layout="centered")
-st.title("🌍 Land Cover Classification")
-st.write("Upload a satellite image to classify it as **Cloudy**, **Desert**, **Green Area**, or **Water**.")
+labels = {
+    r"/content/dataset/Satellite Image data/cloudy": "Cloudy",
+    r"/content/dataset/Satellite Image data/desert": "Desert",
+    r"/content/dataset/Satellite Image data/green_area": "Green_Area",
+    r"/content/dataset/Satellite Image data/water": "Water",
+}
 
-uploaded_file = st.file_uploader("Upload a satellite image", type=["jpg", "jpeg", "png"])
+label_map = list(labels.values())
+
+def preprocess_image(image: Image.Image):
+    image = image.resize((256, 256))
+    image = np.array(image)
+    if image.shape[-1] == 4:
+        image = image[:, :, :3]
+    image = image / 255.0
+    return np.expand_dims(image, axis=0)
+
+st.set_page_config(page_title="Land Cover Classifier 🌍", layout="wide")
+st.title("🛰️ Satellite Land Cover Classification")
+st.markdown("Upload a satellite image and let the AI classify it into one of the land cover types.")
+
+uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
 
 if uploaded_file:
-    image = Image.open(uploaded_file).convert("RGB")
+    image = Image.open(uploaded_file)
     st.image(image, caption="Uploaded Image", use_column_width=True)
 
-    # Preprocess
-    resized_image = image.resize((255, 255))
-    img_array = np.expand_dims(np.array(resized_image) / 255.0, axis=0)
+    if st.button("🧠 Classify Image"):
+        with st.spinner("Predicting..."):
+            processed_img = preprocess_image(image)
+            prediction = model.predict(processed_img)
+            predicted_label = label_map[np.argmax(prediction)]
 
-    # Predict
-    prediction = model.predict(img_array)
-    predicted_class = CLASS_NAMES[np.argmax(prediction)]
-
-    # Display result
-    st.success(f"✅ Predicted Class: **{predicted_class}**")
+        st.success(f"✅ Predicted Class: **{predicted_label}**")
+        st.bar_chart(prediction[0])
