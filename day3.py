@@ -2,28 +2,27 @@ import streamlit as st
 import numpy as np
 from PIL import Image
 from tensorflow.keras.models import load_model
-import requests
-import tempfile
+import gdown
 import os
 
-# Load model from Google Drive link
+# Load model from Google Drive
 @st.cache_resource
 def load_trained_model():
-    url = "https://drive.google.com/uc?export=download&id=1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".h5") as tmp_file:
-        tmp_path = tmp_file.name
-        response = requests.get(url)
-        tmp_file.write(response.content)
-    model = load_model(tmp_path)
+    model_path = "Modelenv.v1.h5"
+    if not os.path.exists(model_path):
+        file_id = "1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9"
+        url = f"https://drive.google.com/uc?id={file_id}"
+        gdown.download(url, model_path, quiet=False)
+    model = load_model(model_path)
     return model
 
 model = load_trained_model()
 class_names = ['Cloudy', 'Desert', 'Green_Area', 'Water']
 
-# App UI
+# Streamlit UI
 st.set_page_config(page_title="Land Cover Classification", layout="centered")
-st.title("🌍 Environmental Monitoring: Land Cover Classification")
-st.write("Upload a satellite image to classify it as Cloudy, Desert, Green Area, or Water.")
+st.title("🌍 Land Cover Classification Using Satellite Images")
+st.write("Upload a satellite image to classify it as **Cloudy**, **Desert**, **Green Area**, or **Water**.")
 
 uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
 
