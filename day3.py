@@ -52,17 +52,67 @@ st.markdown("""
 def load_trained_model():
     """Load the pre-trained model from Google Drive"""
     try:
-        # Download model from Google Drive
-        url = "https://drive.google.com/uc?export=download&id=1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9"
+        # First, try to load from local file if it exists
+        if os.path.exists('Modelenv.v1.h5'):
+            st.info("Loading model from local file...")
+            return load_model('Modelenv.v1.h5')
         
-        with st.spinner("Loading model... This may take a moment."):
-            response = requests.get(url)
+        # Download model from Google Drive with proper headers
+        file_id = "1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9"
+        url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        
+        with st.spinner("Downloading model from Google Drive... This may take a moment."):
+            session = requests.Session()
+            
+            # First request to get the download warning page
+            response = session.get(url, stream=True)
+            
+            # Check if we got a virus scan warning
+            if "virus scan warning" in response.text.lower():
+                # Extract the confirm token
+                for line in response.text.split('\n'):
+                    if 'confirm=' in line:
+                        confirm_token = line.split('confirm=')[1].split('&')[0]
+                        break
+                else:
+                    confirm_token = None
+                
+                if confirm_token:
+                    # Make the actual download request with confirm token
+                    url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={file_id}"
+                    response = session.get(url, stream=True)
             
             if response.status_code == 200:
+                # Check if response contains HTML (Google Drive warning page)
+                content_type = response.headers.get('content-type', '')
+                if 'text/html' in content_type:
+                    st.error("❌ Unable to download model directly. Please try one of these alternatives:")
+                    st.markdown("""
+                    **Option 1:** Download the model manually and place it in the same directory as this app:
+                    - Download from: https://drive.google.com/file/d/1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9/view
+                    - Save as: `Modelenv.v1.h5`
+                    - Restart the app
+                    
+                    **Option 2:** Use the file uploader below to upload your model file directly
+                    """)
+                    return None
+                
                 # Save to temporary file
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
-                    tmp_file.write(response.content)
+                    # Write in chunks to handle large files
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            tmp_file.write(chunk)
                     tmp_file_path = tmp_file.name
+                
+                # Verify file size
+                file_size = os.path.getsize(tmp_file_path)
+                if file_size < 1000:  # Less than 1KB suggests an error page
+                    os.unlink(tmp_file_path)
+                    st.error("❌ Downloaded file is too small. Please try manual download.")
+                    return None
+                
+                st.success(f"✅ Model downloaded successfully! ({file_size/1024/1024:.1f} MB)")
                 
                 # Load the model
                 model = load_model(tmp_file_path)
@@ -72,10 +122,32 @@ def load_trained_model():
                 
                 return model
             else:
-                st.error("Failed to download model from Google Drive")
+                st.error(f"❌ Failed to download model. Status code: {response.status_code}")
                 return None
+                
     except Exception as e:
-        st.error(f"Error loading model: {str(e)}")
+        st.error(f"❌ Error loading model: {str(e)}")
+        st.info("💡 Try uploading your model file manually using the file uploader below.")
+        return None
+
+@st.cache_resource
+def load_model_from_upload(uploaded_model_file):
+    """Load model from uploaded file"""
+    try:
+        # Save uploaded file to temporary location
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
+            tmp_file.write(uploaded_model_file.getvalue())
+            tmp_file_path = tmp_file.name
+        
+        # Load the model
+        model = load_model(tmp_file_path)
+        
+        # Clean up temporary file
+        os.unlink(tmp_file_path)
+        
+        return model
+    except Exception as e:
+        st.error(f"Error loading uploaded model: {str(e)}")
         return None
 
 def preprocess_image(uploaded_image):
@@ -135,11 +207,30 @@ def main():
     # Load model
     model = load_trained_model()
     
+    # If model loading failed, provide manual upload option
     if model is None:
-        st.error("❌ Failed to load the model. Please check your internet connection and try again.")
-        return
-    
-    st.success("✅ Model loaded successfully!")
+        st.warning("⚠️ Automatic model loading failed. Please upload your model file manually.")
+        
+        uploaded_model = st.file_uploader(
+            "Upload your trained model file (Modelenv.v1.h5)",
+            type=['h5'],
+            help="Upload the Modelenv.v1.h5 file from your Google Drive"
+        )
+        
+        if uploaded_model is not None:
+            with st.spinner("Loading uploaded model..."):
+                model = load_model_from_upload(uploaded_model)
+            
+            if model is not None:
+                st.success("✅ Model loaded successfully from upload!")
+            else:
+                st.error("❌ Failed to load the uploaded model.")
+                return
+        else:
+            st.info("👆 Please upload your model file to continue.")
+            return
+    else:
+        st.success("✅ Model loaded successfully!")
     
     # File uploader
     uploaded_file = st.file_uploader(
