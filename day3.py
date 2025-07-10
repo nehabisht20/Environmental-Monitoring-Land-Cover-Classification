@@ -1,20 +1,17 @@
 import streamlit as st
 import numpy as np
 from PIL import Image
-import requests
 import os
+import gdown
 from tensorflow.keras.models import load_model
 
-# Model download URL
-MODEL_URL = "https://drive.google.com/uc?export=download&id=1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9"
+MODEL_ID = "1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9"
 MODEL_PATH = "Modelenv.v1.h5"
 
-# Download model from Google Drive
 @st.cache_resource
 def download_and_load_model():
     if not os.path.exists(MODEL_PATH):
-        with open(MODEL_PATH, "wb") as f:
-            f.write(requests.get(MODEL_URL).content)
+        gdown.download(id=MODEL_ID, output=MODEL_PATH, quiet=False)
     return load_model(MODEL_PATH)
 
 model = download_and_load_model()
