@@ -1,50 +1,42 @@
 import streamlit as st
-import tensorflow as tf
-from tensorflow.keras.models import load_model
-from PIL import Image
 import numpy as np
+from PIL import Image
+from tensorflow.keras.models import load_model
 import gdown
 import os
 
-# Download model from Google Drive using gdown
+# Constants
+MODEL_URL = "https://drive.google.com/uc?id=1Y5bmVguQu7-RcIx0LGnKlhbtM5kN9EM9"
+MODEL_PATH = "Modelenv.v1.h5"
+CLASS_NAMES = ['Cloudy', 'Desert', 'Green_Area', 'Water']
+
+# Load model safely from Drive
 @st.cache_resource
 def load_model_from_drive():
-    url = "https://drive.google.com/uc?export=download&id=1p9pqC-Ba4aKdNcQploHjnaCVip5J07qe"
-    output_path = "Modelenv.v1.h5"
-    if not os.path.exists(output_path):
-        gdown.download(url, output_path, quiet=False)
-    return load_model(output_path)
+    if not os.path.exists(MODEL_PATH) or os.path.getsize(MODEL_PATH) < 10000:  # <10 KB likely HTML file
+        gdown.download(MODEL_URL, MODEL_PATH, quiet=False, fuzzy=True)
+    return load_model(MODEL_PATH)
 
-# Load model
 model = load_model_from_drive()
 
-# Labels
-labels = {
-    0: "Cloudy",
-    1: "Desert",
-    2: "Green_Area",
-    3: "Water"
-}
+# Streamlit UI
+st.set_page_config(page_title="Land Cover Classifier", layout="centered")
+st.title("🌍 Land Cover Classification")
+st.write("Upload a satellite image to classify it as **Cloudy**, **Desert**, **Green Area**, or **Water**.")
 
-st.set_page_config(page_title="🌍 Satellite Classifier", layout="centered")
-st.title("🛰 Satellite Image Classifier")
-st.markdown("Upload a satellite image and let AI predict the terrain!")
-
-uploaded_file = st.file_uploader("📤 Upload an Image", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Upload a satellite image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Image", use_column_width=True)
 
-    img = image.resize((256, 256))
-    img_array = np.expand_dims(np.array(img) / 255.0, axis=0)
+    # Preprocess
+    resized_image = image.resize((255, 255))
+    img_array = np.expand_dims(np.array(resized_image) / 255.0, axis=0)
 
+    # Predict
     prediction = model.predict(img_array)
-    predicted_class = labels[np.argmax(prediction)]
+    predicted_class = CLASS_NAMES[np.argmax(prediction)]
 
-    st.success(f"🌟 Prediction: *{predicted_class}*")
-    st.bar_chart(prediction[0])
-else:
-    st.info("Please upload a satellite image to get started.")
-
-st.caption("🔍 Model loaded from Google Drive using gdown.")
+    # Display result
+    st.success(f"✅ Predicted Class: **{predicted_class}**")
